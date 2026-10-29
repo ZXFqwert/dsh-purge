@@ -9,6 +9,9 @@ Status: experimental, not a release or a security sandbox. Original upstream att
 - Use a static persona suffix: `{{cwd}}` is not registered in some headless profiles.
 - In explicit isolated mode, restrict host discovery and patch targets to the configured laboratory, suppress global launcher modifications and DSH Doctor cleanup, and reject a different explicit DSH target.
 - Create backups with exclusive copy rather than a Windows-incompatible rename over a placeholder. Abort a multi-host apply when backup reports errors.
+- In isolated development mode, block the built-in destructive updater and uninstall; use the separate Git checkout for development instead.
+- Plugin, rule, skill and red-team HTTP routes use the host connection's authentication check. Unauthenticated requests are rejected; fail closed if the host authentication service is unavailable.
+- Isolated Web restarts retain the selected port and Node execution flags rather than falling back to port 3080 or losing the permission flags.
 
 ## Local verification
 
@@ -24,5 +27,7 @@ The fixture scripts under `scripts/` are for disposable, newly created target co
 - DSH's loader needs native addons; Node explicitly warns `--allow-addons` can invalidate its permission model. Do not rely on that model alone for isolation.
 - A local mocked Messages endpoint can validate prompt injection and a read-tool round trip, not the behavior of a real DeepSeek model or its service rules.
 - A controlled local mock was also used to exercise one PowerShell tool round trip; it does not validate arbitrary shell commands.
-- Full GUI approval, normal tool permissions, recovery after real restarts and upgrades, and live provider authentication require separate testing before release.
+- Full GUI approval, normal tool permissions, upgrade recovery, and live provider authentication require separate testing before release.
+- A local authenticated Web API Apply → restart → status → Revert → manual restart run was tested with a disposable copy: Apply reported 62 changes, post-restart status had 0 pending, and Revert restored 50 changed files. All 55 copied target files matched the pristine originals by SHA-256. After the manual restart, 57 items were pending again, consistent with the restored state. Five stable-install reference files also matched their pre-test hashes. This does not prove every possible filesystem path is confined.
+- Unauthenticated requests to status, rules, skills, and red-team routes returned HTTP 401; authenticated rules and skills returned 200; authenticated cross-origin status returned 403. Isolated update and uninstall operations were rejected. Test results apply to the Web profile on Windows and do not establish desktop compatibility.
 - `dshTarget` still identifies the original supported target; do not claim general 0.2.1 support based only on these checks.

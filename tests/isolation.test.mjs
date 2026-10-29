@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { enumeratePatchAiBases, listShimDirsForPatch, findShimDir, findDesktopShimDir, patchShim, revertShim, sanitizeDesktopCommandRuntimes, silenceCmdFlash, stubDoctorSupervisor, applyPatches, openSealedDesktopHost, desktopAsarStillSealed } from '../lib/core.js';
+import { enumeratePatchAiBases, listShimDirsForPatch, findShimDir, findDesktopShimDir, findDshBinRoot, patchShim, revertShim, sanitizeDesktopCommandRuntimes, silenceCmdFlash, stubDoctorSupervisor, applyPatches, openSealedDesktopHost, desktopAsarStillSealed, repairOfficialCliAfterUnpack } from '../lib/core.js';
+import { portFromRequest, isolatedExecArgs, restartArgv, scheduleRestart } from '../lib/web.js';
+import { applyUpdate, switchChannel, switchVersion, handleUpdateOp } from '../lib/update.js';
+import { uninstallPurge } from '../lib/uninstall.js';
 
 test('isolated mode limits host discovery and disables global maintenance', () => {
   const base = process.env.DSH_BASE;
@@ -41,6 +44,39 @@ test('isolated mode refuses direct shim operations', async () => {
   assert.equal(findDesktopShimDir(), null);
   assert.deepEqual(await patchShim(process.env.DSH_HOME), { skipped: 'isolated' });
   assert.deepEqual(await revertShim(process.env.DSH_HOME), { skipped: 'isolated' });
+});
+
+test('isolated web restart uses the selected runtime and preserves port and node flags', () => {
+  const bin = findDshBinRoot();
+  assert.equal(fs.realpathSync(bin), fs.realpathSync(path.join(process.env.DSH_BASE, 'dsh')));
+  const argv = ['node', path.join(bin, 'lib', 'bin.js'), 'web', '--port', '3085'];
+  assert.equal(portFromRequest(null, { argv, env: {} }), 3085);
+  assert.equal(portFromRequest(null, { argv: [...argv.slice(0, 3), '--port=3086'], env: {} }), 3086);
+  assert.equal(portFromRequest({ headers: { host: '127.0.0.1:3087' } }, { argv, env: {} }), 3087);
+  assert.deepEqual(isolatedExecArgs({ DSH_PURGE_ISOLATED: '1' }, ['--permission', '--allow-child-process']), ['--permission', '--allow-child-process']);
+  assert.deepEqual(isolatedExecArgs({}, ['--permission']), []);
+  assert.ok(restartArgv({ argv }).includes('3085'));
+  assert.deepEqual(repairOfficialCliAfterUnpack(), { ok: true, skipped: 'isolated' });
+});
+
+test('web restart reports scheduling failures and successes', () => {
+  let payload;
+  const result = scheduleRestart({ headers: { host: '127.0.0.1:3085' } }, null, { openBrowser: false, spawnHelper: (_helper, info) => { payload = info; } });
+  assert.deepEqual(result, { restarting: true });
+  assert.equal(payload.port, 3085);
+  assert.equal(payload.openBrowser, false);
+  const failure = scheduleRestart(null, null, { spawnHelper: () => { throw new Error('spawn denied'); } });
+  assert.deepEqual(failure, { restarting: false, error: 'spawn denied' });
+});
+
+test('isolated mode blocks destructive updater and uninstall entry points', async () => {
+  await assert.rejects(applyUpdate(), /disabled in isolated development mode/);
+  await assert.rejects(switchChannel('stable'), /disabled in isolated development mode/);
+  await assert.rejects(switchVersion('v1.1.71'), /disabled in isolated development mode/);
+  await assert.rejects(handleUpdateOp({ op: 'apply' }), /disabled in isolated development mode/);
+  const result = await uninstallPurge();
+  assert.equal(result.ok, false);
+  assert.match(result.errors[0], /disabled in isolated development mode/);
 });
 
 test('isolated mode rejects a junction pointing outside the lab', () => {
