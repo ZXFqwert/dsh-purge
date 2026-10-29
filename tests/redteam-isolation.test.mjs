@@ -6,6 +6,25 @@ import path from 'node:path';
 import { installBundledSkills } from '../lib/redteam/index.js';
 import { RedteamStore } from '../lib/redteam/store-core.js';
 import { writeSettings } from '../lib/redteam/settings.js';
+import { handleUpdateOp } from '../lib/redteam/ui.js';
+
+test('isolated redteam updater rejects checks and installs before preflight', async () => {
+  const previous = process.env.DSH_PURGE_ISOLATED;
+  process.env.DSH_PURGE_ISOLATED = '1';
+  const ctx = { redteam: { plugin: { name: 'dsh-purge', version: '1.1.71' } }, get() { throw new Error('preflight must not run'); } };
+  try {
+    for (const op of ['updateCheck', 'updateApply']) {
+      const result = await handleUpdateOp(ctx, { op, target: '1.1.71' });
+      assert.equal(result.ok, false);
+      assert.match(result.error, /disabled in isolated/);
+    }
+    const version = await handleUpdateOp(ctx, { op: 'version' });
+    assert.equal(version.ok, true);
+    assert.equal(version.install.mode, 'isolated');
+  } finally {
+    if (previous === undefined) delete process.env.DSH_PURGE_ISOLATED; else process.env.DSH_PURGE_ISOLATED = previous;
+  }
+});
 
 test('isolated redteam does not sync to the ordinary user home or follow escaping junctions', () => {
   const root = fs.mkdtempSync(path.join(process.env.TEMP || os.tmpdir(), 'dsh-redteam-lab-'));
