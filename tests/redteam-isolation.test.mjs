@@ -98,6 +98,18 @@ test('redteam attachments and knowledge files reject outside junctions', () => {
     const saved = store.savePoc({ title: 'Lab entry', code: 'lab-entry', content: 'LAB_KNOWLEDGE' });
     assert.equal(fs.readFileSync(saved.path, 'utf8'), 'LAB_KNOWLEDGE');
     assert.ok(store.searchPocs({ q: 'Lab entry' }).some((item) => item.code === 'lab-entry'));
+    const pocDir = path.join(store.pocsDirOf(), 'lab-entry');
+    const parkedPoc = pocDir + '-parked';
+    fs.renameSync(pocDir, parkedPoc);
+    link(pocDir);
+    assert.throws(() => store.deletePoc('lab-entry'), /escapes lab root/);
+    assert.equal(store.getPoc('lab-entry').content, 'LAB_KNOWLEDGE');
+    fs.unlinkSync(pocDir);
+    links.pop();
+    fs.renameSync(parkedPoc, pocDir);
+    assert.equal(store.deletePoc('lab-entry').deleted, true);
+    assert.equal(store.getPoc('lab-entry'), undefined);
+    assert.equal(fs.existsSync(pocDir), false);
     assert.throws(() => store.addAttackFile('lab-files', { target: '..', name: 'blocked.txt', evidence: 'lab', content: 'blocked' }), /outside|escape|path/i);
     assert.equal(fs.existsSync(path.join(store.dirOf('lab-files'), 'blocked.txt')), false);
     link(path.join(store.pocsDirOf(), 'external'));
