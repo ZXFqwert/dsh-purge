@@ -6,6 +6,7 @@ import path from 'node:path';
 import { installBundledSkills } from '../lib/redteam/index.js';
 import { RedteamStore } from '../lib/redteam/store-core.js';
 import { writeSettings } from '../lib/redteam/settings.js';
+import { savePlatformConfig, loadPlatformConfig } from '../lib/redteam/platform-config.js';
 import { handleUpdateOp } from '../lib/redteam/ui.js';
 
 test('isolated redteam updater rejects checks and installs before preflight', async () => {
@@ -23,6 +24,51 @@ test('isolated redteam updater rejects checks and installs before preflight', as
     assert.equal(version.install.mode, 'isolated');
   } finally {
     if (previous === undefined) delete process.env.DSH_PURGE_ISOLATED; else process.env.DSH_PURGE_ISOLATED = previous;
+  }
+});
+
+test('isolated redteam settings and platform config reject outside junctions', () => {
+  const temp = process.env.TEMP || os.tmpdir();
+  const root = fs.mkdtempSync(path.join(temp, 'dsh-redteam-config-'));
+  const outside = fs.mkdtempSync(path.join(temp, 'dsh-redteam-config-outside-'));
+  const home = path.join(root, 'home');
+  const base = path.join(root, 'runtime', 'node_modules', '@deepseek-ai');
+  fs.mkdirSync(path.join(base, 'dsh-agent-instructions', 'lib'), { recursive: true });
+  fs.mkdirSync(home);
+  const keys = ['DSH_HOME', 'DSH_BASE', 'DSH_PURGE_LAB_ROOT', 'DSH_PURGE_ISOLATED'];
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  Object.assign(process.env, { DSH_HOME: home, DSH_BASE: base, DSH_PURGE_LAB_ROOT: root, DSH_PURGE_ISOLATED: '1' });
+  const target = path.join(home, 'redteam');
+  const parked = path.join(home, 'redteam-parked');
+  let linked = false;
+  let moved = false;
+  try {
+    writeSettings(target, { maxAgents: 2 });
+    savePlatformConfig({ notes: 'LAB_ORIGINAL_CONFIG' }, target);
+    fs.writeFileSync(path.join(outside, 'sentinel.txt'), 'unchanged');
+    fs.renameSync(target, parked);
+    moved = true;
+    fs.symlinkSync(outside, target, process.platform === 'win32' ? 'junction' : 'dir');
+    linked = true;
+    assert.throws(() => writeSettings(target, { maxAgents: 9 }), /escapes lab root/);
+    assert.throws(() => savePlatformConfig({ notes: 'blocked' }, target), /escapes lab root/);
+    assert.deepEqual(fs.readdirSync(outside), ['sentinel.txt']);
+    assert.equal(fs.readFileSync(path.join(outside, 'sentinel.txt'), 'utf8'), 'unchanged');
+    fs.unlinkSync(target);
+    linked = false;
+    fs.renameSync(parked, target);
+    moved = false;
+    assert.equal(JSON.parse(fs.readFileSync(path.join(target, 'settings.json'), 'utf8')).maxAgents, 2);
+    assert.equal(loadPlatformConfig(target).notes, 'LAB_ORIGINAL_CONFIG');
+  } finally {
+    if (linked) fs.unlinkSync(target);
+    if (moved) fs.renameSync(parked, target);
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.unlinkSync(path.join(outside, 'sentinel.txt'));
+    fs.rmdirSync(outside);
   }
 });
 
