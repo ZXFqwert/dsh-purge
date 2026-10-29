@@ -27,6 +27,10 @@ test('isolated redteam does not sync to the ordinary user home or follow escapin
     store.openEngagement('lab-test', []);
     assert.equal(store.db('lab-test').prepare('SELECT 1 AS value').get().value, 1);
     assert.ok(store.listEngagements().some((item) => item.id === 'lab-test'));
+    store.saveStage('lab-test', { code: 'custom-stage', goal: 'LAB_PERSISTED' });
+    store.close();
+    store = new RedteamStore(path.join(home, 'redteam'));
+    assert.ok(store.listStages('lab-test').some((item) => item.code === 'custom-stage' && item.goal === 'LAB_PERSISTED'));
     const link = path.join(store.engagementsDir, 'external');
     fs.symlinkSync(outside, link, process.platform === 'win32' ? 'junction' : 'dir');
     assert.throws(() => store.db('external', { create: true }), /escapes lab root/);
