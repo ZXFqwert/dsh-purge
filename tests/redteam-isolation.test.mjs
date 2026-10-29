@@ -89,6 +89,9 @@ test('isolated redteam does not sync to the ordinary user home or follow escapin
     assert.deepEqual(sync.targets, [path.join(home, 'redteam', 'skills')]);
     assert.equal(fs.existsSync(path.join(outside, '.dsh', 'redteam')), false);
     store = new RedteamStore(path.join(home, 'redteam'));
+    assert.throws(() => store.db('../outside-engagements', { create: true }), /invalid engagement id/);
+    assert.throws(() => store.savePrompt('../outside-engagements', 'recon', 'blocked'), /invalid engagement id/);
+    assert.equal(fs.existsSync(path.join(home, 'redteam', 'outside-engagements')), false);
     store.openEngagement('lab-test', []);
     assert.equal(store.db('lab-test').prepare('SELECT 1 AS value').get().value, 1);
     assert.ok(store.listEngagements().some((item) => item.id === 'lab-test'));
