@@ -1,0 +1,44 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { installBundledSkills } from '../lib/redteam/index.js';
+import { RedteamStore } from '../lib/redteam/store-core.js';
+import { writeSettings } from '../lib/redteam/settings.js';
+
+test('isolated redteam does not sync to the ordinary user home or follow escaping junctions', () => {
+  const root = fs.mkdtempSync(path.join(process.env.TEMP || os.tmpdir(), 'dsh-redteam-lab-'));
+  const outside = fs.mkdtempSync(path.join(process.env.TEMP || os.tmpdir(), 'dsh-redteam-outside-'));
+  const home = path.join(root, 'home');
+  const base = path.join(root, 'runtime', 'node_modules', '@deepseek-ai');
+  fs.mkdirSync(path.join(base, 'dsh-agent-instructions', 'lib'), { recursive: true });
+  fs.mkdirSync(home);
+  fs.mkdirSync(path.join(outside, '.dsh'), { recursive: true });
+  const keys = ['DSH_HOME', 'DSH_BASE', 'DSH_PURGE_LAB_ROOT', 'DSH_PURGE_ISOLATED', 'USERPROFILE', 'HOME'];
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  Object.assign(process.env, { DSH_HOME: home, DSH_BASE: base, DSH_PURGE_LAB_ROOT: root, DSH_PURGE_ISOLATED: '1', USERPROFILE: outside, HOME: outside });
+  let store;
+  try {
+    const sync = installBundledSkills();
+    assert.deepEqual(sync.targets, [path.join(home, 'redteam', 'skills')]);
+    assert.equal(fs.existsSync(path.join(outside, '.dsh', 'redteam')), false);
+    store = new RedteamStore(path.join(home, 'redteam'));
+    store.openEngagement('lab-test', []);
+    assert.equal(store.db('lab-test').prepare('SELECT 1 AS value').get().value, 1);
+    assert.ok(store.listEngagements().some((item) => item.id === 'lab-test'));
+    const link = path.join(store.engagementsDir, 'external');
+    fs.symlinkSync(outside, link, process.platform === 'win32' ? 'junction' : 'dir');
+    assert.throws(() => store.db('external', { create: true }), /escapes lab root/);
+    assert.throws(() => writeSettings(outside, { example: 1 }), /escapes lab root/);
+    assert.equal(fs.existsSync(path.join(outside, 'settings.json')), false);
+    fs.unlinkSync(link);
+  } finally {
+    store?.close();
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
+});

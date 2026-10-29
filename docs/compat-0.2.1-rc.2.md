@@ -10,6 +10,7 @@ Status: experimental, not a release or a security sandbox. Original upstream att
 - In explicit isolated mode, restrict host discovery and patch targets to the configured laboratory, suppress global launcher modifications and DSH Doctor cleanup, and reject a different explicit DSH target.
 - Create backups with exclusive copy rather than a Windows-incompatible rename over a placeholder. Abort a multi-host apply when backup reports errors.
 - In isolated development mode, block the built-in destructive updater and uninstall; use the separate Git checkout for development instead.
+- Isolated rules, skills and red-team writes check existing path ancestors for junctions escaping the lab; red-team skill synchronization excludes the ordinary user home. Archive skill imports are disabled in isolated mode pending safe extraction review.
 - Plugin, rule, skill and red-team HTTP routes use the host connection's authentication check. Unauthenticated requests are rejected; fail closed if the host authentication service is unavailable.
 - Isolated Web restarts retain the selected port and Node execution flags rather than falling back to port 3080 or losing the permission flags.
 
@@ -24,6 +25,7 @@ The fixture scripts under `scripts/` are for disposable, newly created target co
 ## Known limits
 
 - `DSH_PURGE_ISOLATED=1` is an application-level guard, **not an OS sandbox**. The plugin has broad host privileges and paths outside the core patching functions require further review.
+- Path checks are not atomic against junction changes; SQLite native I/O, other native code and spawned processes are not fully confined by these checks. Do not treat them as a security boundary.
 - DSH's loader needs native addons; Node explicitly warns `--allow-addons` can invalidate its permission model. Do not rely on that model alone for isolation.
 - A local mocked Messages endpoint can validate prompt injection and a read-tool round trip, not the behavior of a real DeepSeek model or its service rules.
 - A controlled local mock was also used to exercise one PowerShell tool round trip; it does not validate arbitrary shell commands.
