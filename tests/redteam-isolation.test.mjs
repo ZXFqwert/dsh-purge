@@ -86,6 +86,15 @@ test('redteam attachments and knowledge files reject outside junctions', () => {
     store.openEngagement('lab-files', []);
     const shot = store.addShot('lab-files', { file: 'lab.png', data_base64: Buffer.from('lab-shot').toString('base64') });
     assert.ok(shot);
+    const shotsDir = store.shotsDirOf('lab-files');
+    const parkedShots = shotsDir + '-parked';
+    fs.renameSync(shotsDir, parkedShots);
+    link(shotsDir);
+    assert.throws(() => store.deleteShot('lab-files', shot.id), /escapes lab root/);
+    assert.ok(store.listShots('lab-files').items.some((item) => item.id === shot.id));
+    fs.unlinkSync(shotsDir);
+    links.pop();
+    fs.renameSync(parkedShots, shotsDir);
     const saved = store.savePoc({ title: 'Lab entry', code: 'lab-entry', content: 'LAB_KNOWLEDGE' });
     assert.equal(fs.readFileSync(saved.path, 'utf8'), 'LAB_KNOWLEDGE');
     assert.ok(store.searchPocs({ q: 'Lab entry' }).some((item) => item.code === 'lab-entry'));
