@@ -84,6 +84,17 @@ test('redteam attachments and knowledge files reject outside junctions', () => {
   try {
     store = new RedteamStore(path.join(home, 'redteam'));
     store.openEngagement('lab-files', []);
+    const db = store.db('lab-files');
+    const beforeRuns = db.prepare('SELECT COUNT(*) AS n FROM scan_run').get().n;
+    assert.throws(() => store.importBundle('lab-files', {
+      scan: { tool: 'lab-only' },
+      assets: [{ ip: '192.0.2.1', names: [{ name: null }] }],
+    }));
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM scan_run').get().n, beforeRuns);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM asset').get().n, 0);
+    const imported = store.importBundle('lab-files', { scan: { tool: 'lab-only' }, assets: [{ ip: '192.0.2.1' }] });
+    assert.equal(imported.counts.assets, 1);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM scan_run').get().n, beforeRuns + 1);
     const shot = store.addShot('lab-files', { file: 'lab.png', data_base64: Buffer.from('lab-shot').toString('base64') });
     assert.ok(shot);
     const shotsDir = store.shotsDirOf('lab-files');
