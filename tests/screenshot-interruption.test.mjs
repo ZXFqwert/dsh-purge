@@ -4,9 +4,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { RedteamStore } from '../lib/redteam/store-core.js';
+import { RedteamStore, dispatch } from '../lib/redteam/store-core.js';
 
-test('documents screenshot orphan after abrupt exit before database insert', () => {
+test('detects without deleting a screenshot orphan after abrupt exit', () => {
   const root = fs.mkdtempSync(path.join(process.env.TEMP || os.tmpdir(), 'dsh-shot-interrupt-'));
   const home = path.join(root, 'home');
   const base = path.join(root, 'runtime', 'node_modules', '@deepseek-ai');
@@ -20,6 +20,7 @@ test('documents screenshot orphan after abrupt exit before database insert', () 
     const redteamRoot = path.join(home, 'redteam');
     store = new RedteamStore(redteamRoot);
     store.openEngagement('interrupt-test', []);
+    store.addShot('interrupt-test', { file: 'indexed.png', data_base64: Buffer.from('LAB_INDEXED').toString('base64') });
     store.close();
     store = null;
     const moduleUrl = new URL('../lib/redteam/store-core.js', import.meta.url).href;
@@ -45,7 +46,14 @@ test('documents screenshot orphan after abrupt exit before database insert', () 
     assert.equal(fs.readFileSync(file, 'utf8'), 'LAB_INTERRUPTED');
     store = new RedteamStore(redteamRoot);
     assert.equal(store.listShots('interrupt-test').items.some((shot) => shot.file === 'interrupted.png'), false);
-    assert.equal(fs.existsSync(file), true, 'current startup leaves the orphan for manual inspection');
+    const linkTarget = path.join(home, 'link-target');
+    fs.mkdirSync(linkTarget);
+    fs.symlinkSync(linkTarget, path.join(path.dirname(file), 'directory-link'), process.platform === 'win32' ? 'junction' : 'dir');
+    assert.deepEqual(store.listShotOrphans('interrupt-test'), { items: [{ file: 'interrupted.png' }], total: 1 });
+    assert.deepEqual(dispatch(store, { op: 'shotOrphans', engagement: 'interrupt-test' }), { ok: true, items: [{ file: 'interrupted.png' }], total: 1 });
+    assert.equal(fs.readFileSync(file, 'utf8'), 'LAB_INTERRUPTED');
+    assert.equal(fs.readFileSync(path.join(path.dirname(file), 'indexed.png'), 'utf8'), 'LAB_INDEXED');
+    fs.unlinkSync(path.join(path.dirname(file), 'directory-link'));
   } finally {
     store?.close();
     for (const [key, value] of Object.entries(previous)) {
