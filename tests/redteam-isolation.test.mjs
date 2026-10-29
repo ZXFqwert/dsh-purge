@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { installBundledSkills } from '../lib/redteam/index.js';
@@ -177,6 +178,23 @@ test('redteam attachments and knowledge files reject outside junctions', () => {
     assert.throws(() => store.addShot('lab-files', { file: 'failed.png', data_base64: 'eA==' }), /lab shot denied/);
     assert.equal(fs.existsSync(path.join(shotsDir, 'failed.png')), false);
     db.exec('DROP TRIGGER lab_deny_shot_insert');
+    const originalWrite = fs.writeFileSync;
+    try {
+      fs.writeFileSync = (target, ...args) => {
+        if (typeof target === 'number') {
+          originalWrite(target, Buffer.from('partial'));
+          throw Object.assign(new Error('lab write failed'), { code: 'ENOSPC' });
+        }
+        return originalWrite(target, ...args);
+      };
+      syncBuiltinESMExports();
+      assert.throws(() => store.addShot('lab-files', { file: 'partial.png', data_base64: 'eA==' }), /lab write failed/);
+    } finally {
+      fs.writeFileSync = originalWrite;
+      syncBuiltinESMExports();
+    }
+    assert.equal(fs.existsSync(path.join(shotsDir, 'partial.png')), false);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM shot WHERE file = ?').get('partial.png').n, 0);
     const parkedShots = shotsDir + '-parked';
     fs.renameSync(shotsDir, parkedShots);
     link(shotsDir);
