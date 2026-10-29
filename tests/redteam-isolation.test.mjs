@@ -171,6 +171,12 @@ test('redteam attachments and knowledge files reject outside junctions', () => {
     const shot = store.addShot('lab-files', { file: 'lab.png', data_base64: Buffer.from('lab-shot').toString('base64') });
     assert.ok(shot);
     const shotsDir = store.shotsDirOf('lab-files');
+    assert.throws(() => store.addShot('lab-files', { file: 'lab.png', data_base64: Buffer.from('overwrite').toString('base64') }), /EEXIST|exists/i);
+    assert.equal(fs.readFileSync(path.join(shotsDir, 'lab.png'), 'utf8'), 'lab-shot');
+    db.exec("CREATE TRIGGER lab_deny_shot_insert BEFORE INSERT ON shot BEGIN SELECT RAISE(ABORT, 'lab shot denied'); END");
+    assert.throws(() => store.addShot('lab-files', { file: 'failed.png', data_base64: 'eA==' }), /lab shot denied/);
+    assert.equal(fs.existsSync(path.join(shotsDir, 'failed.png')), false);
+    db.exec('DROP TRIGGER lab_deny_shot_insert');
     const parkedShots = shotsDir + '-parked';
     fs.renameSync(shotsDir, parkedShots);
     link(shotsDir);
